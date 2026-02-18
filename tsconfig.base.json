@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@coach/shared": ["packages/shared/src/index.ts"],
+      "@coach/shared/*": ["packages/shared/src/*"],
+      "@coach/db": ["packages/db/src/index.ts"],
+      "@coach/db/*": ["packages/db/src/*"],
+      "@coach/integrations": ["packages/integrations/src/index.ts"],
+      "@coach/integrations/*": ["packages/integrations/src/*"],
+      "@coach/ai": ["packages/ai/src/index.ts"],
+      "@coach/ai/*": ["packages/ai/src/*"],
+      "@coach/observability": ["packages/observability/src/index.ts"],
+      "@coach/observability/*": ["packages/observability/src/*"]
+    }
+  }
+}

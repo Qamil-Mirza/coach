@@ -1,0 +1,6 @@
+name = "coach-scheduler"
+main = "src/index.ts"
+compatibility_date = "2026-02-18"
+
+[triggers]
+crons = ["*/5 * * * *"]
