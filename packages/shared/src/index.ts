@@ -57,7 +57,11 @@ export const schedulePreferencesSchema = z.object({
   preferred_windows: z.array(
     z.object({ start: z.string().regex(/^\d{2}:\d{2}$/), end: z.string().regex(/^\d{2}:\d{2}$/) })
   ),
-  calendar_strategy: z.enum(["freebusy_first", "heuristics_only"])
+  calendar_strategy: z.enum(["freebusy_first", "heuristics_only"]),
+  fixed_telegram_enabled: z.boolean().default(false),
+  fixed_telegram_time_local: z.string().regex(/^\d{2}:\d{2}$/).default("12:10"),
+  fixed_telegram_message_mode: z.enum(["ai_motivation"]).default("ai_motivation"),
+  fixed_telegram_days: z.enum(["daily"]).default("daily")
 });
 
 export const aiExtractionSchema = z.object({

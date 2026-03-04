@@ -195,7 +195,7 @@ export async function createIntegrationLink(userId: string, type: "telegram" | "
   await withClient((db) =>
     db.query(
       `insert into integrations (user_id, type, config)
-       values ($1, $2, jsonb_build_object('link_code', $3))
+       values ($1, $2, jsonb_build_object('link_code', $3::text))
        on conflict (user_id, type)
        do update set config = jsonb_set(integrations.config, '{link_code}', to_jsonb($3::text)), updated_at = now()`,
       [userId, type, code]
@@ -208,8 +208,8 @@ export async function linkTelegramByCode(code: string, chatId: string): Promise<
   const result = await withClient((db) =>
     db.query(
       `update integrations
-       set status = 'active', config = config || jsonb_build_object('chat_id', $2)
-       where type = 'telegram' and config->>'link_code' = $1
+       set status = 'active', config = config || jsonb_build_object('chat_id', $2::text)
+       where type = 'telegram' and config->>'link_code' = $1::text
        returning user_id`,
       [code, chatId]
     )
@@ -221,8 +221,8 @@ export async function linkDiscordByCode(code: string, channelId: string): Promis
   const result = await withClient((db) =>
     db.query(
       `update integrations
-       set status = 'active', config = config || jsonb_build_object('channel_id', $2)
-       where type = 'discord' and config->>'link_code' = $1
+       set status = 'active', config = config || jsonb_build_object('channel_id', $2::text)
+       where type = 'discord' and config->>'link_code' = $1::text
        returning user_id`,
       [code, channelId]
     )
@@ -247,16 +247,18 @@ export async function deleteAccount(userId: string): Promise<void> {
 export type DueCheckin = {
   id: string;
   user_id: string;
+  timezone: string;
   channel: Channel;
-  payload: { text?: string };
+  payload: { text?: string; type?: string; message_mode?: string; local_date?: string; time_local?: string };
   config: { chat_id?: string; channel_id?: string };
 };
 
 export async function getDueCheckins(nowIso: string): Promise<DueCheckin[]> {
   const result = await withClient((db) =>
     db.query(
-      `select c.id, c.user_id, c.channel, c.payload, i.config
+      `select c.id, c.user_id, u.timezone, c.channel, c.payload, i.config
        from checkins c
+       join users u on u.id = c.user_id
        join integrations i on i.user_id = c.user_id and i.type = c.channel and i.status = 'active'
        where c.status = 'scheduled' and c.scheduled_for <= $1
        order by c.scheduled_for asc
@@ -310,7 +312,6 @@ export async function getSchedulerUsers(): Promise<Array<{ id: string; timezone:
     db.query(
       `select distinct u.id, u.timezone
        from users u
-       join goals g on g.user_id = u.id and g.status = 'active'
        join integrations i on i.user_id = u.id and i.status = 'active' and i.type in ('telegram', 'discord')`
     )
   );
@@ -323,8 +324,8 @@ export async function scheduleCheckin(args: {
   channel: Channel;
   scheduledFor: string;
   payload: Record<string, unknown>;
-}): Promise<void> {
-  await withClient((db) =>
+}): Promise<boolean> {
+  const result = await withClient((db) =>
     db.query(
       `insert into checkins (user_id, goal_id, channel, scheduled_for, payload)
        values ($1, $2, $3, $4, $5::jsonb)
@@ -332,6 +333,7 @@ export async function scheduleCheckin(args: {
       [args.userId, args.goalId ?? null, args.channel, args.scheduledFor, JSON.stringify(args.payload)]
     )
   );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function getUserSchedulingContext(userId: string): Promise<{
@@ -340,13 +342,18 @@ export async function getUserSchedulingContext(userId: string): Promise<{
     dnd_end_local: string;
     workday_start_local: string;
     workday_end_local: string;
+    fixed_telegram_enabled: boolean;
+    fixed_telegram_time_local: string;
+    fixed_telegram_message_mode: "ai_motivation";
+    fixed_telegram_days: "daily";
   };
   goals: Array<{ id: string; title: string }>;
   openTodos: Array<{ id: string; title: string; due_at?: string | null }>;
 }> {
   return withClient(async (db) => {
     const pref = await db.query(
-      `select dnd_start_local::text, dnd_end_local::text, workday_start_local::text, workday_end_local::text
+      `select dnd_start_local::text, dnd_end_local::text, workday_start_local::text, workday_end_local::text,
+              fixed_telegram_enabled, fixed_telegram_time_local::text, fixed_telegram_message_mode, fixed_telegram_days
        from schedule_preferences where user_id = $1`,
       [userId]
     );
@@ -364,7 +371,11 @@ export async function getUserSchedulingContext(userId: string): Promise<{
           dnd_start_local: "22:00:00",
           dnd_end_local: "07:00:00",
           workday_start_local: "09:00:00",
-          workday_end_local: "18:00:00"
+          workday_end_local: "18:00:00",
+          fixed_telegram_enabled: false,
+          fixed_telegram_time_local: "12:10:00",
+          fixed_telegram_message_mode: "ai_motivation",
+          fixed_telegram_days: "daily"
         } as const),
       goals: goals.rows,
       openTodos: todos.rows
@@ -394,8 +405,9 @@ export async function updateSchedulePreferences(userId: string, payload: Record<
   await withClient((db) =>
     db.query(
       `insert into schedule_preferences
-       (user_id, dnd_start_local, dnd_end_local, workday_start_local, workday_end_local, checkin_frequency, preferred_windows, calendar_strategy)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+       (user_id, dnd_start_local, dnd_end_local, workday_start_local, workday_end_local, checkin_frequency, preferred_windows, calendar_strategy,
+        fixed_telegram_enabled, fixed_telegram_time_local, fixed_telegram_message_mode, fixed_telegram_days)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12)
        on conflict (user_id)
        do update set
          dnd_start_local = excluded.dnd_start_local,
@@ -405,6 +417,10 @@ export async function updateSchedulePreferences(userId: string, payload: Record<
          checkin_frequency = excluded.checkin_frequency,
          preferred_windows = excluded.preferred_windows,
          calendar_strategy = excluded.calendar_strategy,
+         fixed_telegram_enabled = excluded.fixed_telegram_enabled,
+         fixed_telegram_time_local = excluded.fixed_telegram_time_local,
+         fixed_telegram_message_mode = excluded.fixed_telegram_message_mode,
+         fixed_telegram_days = excluded.fixed_telegram_days,
          updated_at = now()`,
       [
         userId,
@@ -414,7 +430,71 @@ export async function updateSchedulePreferences(userId: string, payload: Record<
         payload.workday_end_local,
         payload.checkin_frequency,
         JSON.stringify(payload.preferred_windows ?? []),
-        payload.calendar_strategy
+        payload.calendar_strategy,
+        payload.fixed_telegram_enabled ?? false,
+        payload.fixed_telegram_time_local ?? "12:10",
+        payload.fixed_telegram_message_mode ?? "ai_motivation",
+        payload.fixed_telegram_days ?? "daily"
+      ]
+    )
+  );
+}
+
+export type ReminderSettings = {
+  fixed_telegram_enabled: boolean;
+  fixed_telegram_time_local: string;
+  fixed_telegram_message_mode: "ai_motivation";
+  fixed_telegram_days: "daily";
+};
+
+export async function getReminderSettings(userId: string): Promise<ReminderSettings> {
+  return withClient(async (db) => {
+    const result = await db.query(
+      `select fixed_telegram_enabled, fixed_telegram_time_local::text, fixed_telegram_message_mode, fixed_telegram_days
+       from schedule_preferences where user_id = $1`,
+      [userId]
+    );
+
+    if (!result.rowCount) {
+      return {
+        fixed_telegram_enabled: false,
+        fixed_telegram_time_local: "12:10:00",
+        fixed_telegram_message_mode: "ai_motivation",
+        fixed_telegram_days: "daily"
+      };
+    }
+
+    return result.rows[0] as ReminderSettings;
+  });
+}
+
+export async function updateReminderSettings(
+  userId: string,
+  payload: {
+    fixed_telegram_enabled: boolean;
+    fixed_telegram_time_local: string;
+    fixed_telegram_message_mode: "ai_motivation";
+    fixed_telegram_days: "daily";
+  }
+): Promise<void> {
+  await withClient((db) =>
+    db.query(
+      `insert into schedule_preferences
+       (user_id, fixed_telegram_enabled, fixed_telegram_time_local, fixed_telegram_message_mode, fixed_telegram_days)
+       values ($1, $2, $3, $4, $5)
+       on conflict (user_id)
+       do update set
+         fixed_telegram_enabled = excluded.fixed_telegram_enabled,
+         fixed_telegram_time_local = excluded.fixed_telegram_time_local,
+         fixed_telegram_message_mode = excluded.fixed_telegram_message_mode,
+         fixed_telegram_days = excluded.fixed_telegram_days,
+         updated_at = now()`,
+      [
+        userId,
+        payload.fixed_telegram_enabled,
+        payload.fixed_telegram_time_local,
+        payload.fixed_telegram_message_mode,
+        payload.fixed_telegram_days
       ]
     )
   );
@@ -439,4 +519,13 @@ export async function getCalendarTokens(
     )
   );
   return result.rows as Array<{ provider: "google" | "microsoft"; access_token_enc: string }>;
+}
+
+export async function disconnectCalendarProvider(userId: string, provider: "google" | "microsoft"): Promise<boolean> {
+  const integrationType = provider === "google" ? "google_calendar" : "ms_graph";
+  return withClient(async (db) => {
+    const result = await db.query(`delete from oauth_tokens where user_id = $1 and provider = $2`, [userId, provider]);
+    await db.query(`update integrations set status = 'disabled', updated_at = now() where user_id = $1 and type = $2`, [userId, integrationType]);
+    return (result.rowCount ?? 0) > 0;
+  });
 }

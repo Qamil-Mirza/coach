@@ -50,6 +50,14 @@ export function parseTelegramLinkCommand(text: string): TelegramLinkMatch {
   return { code: match[1] };
 }
 
+export function isTelegramTasksCommand(text: string): boolean {
+  return /^\/(tasks|todos)(?:@[A-Za-z0-9_]+)?$/i.test(text.trim());
+}
+
+export function isTelegramAiTestCommand(text: string): boolean {
+  return /^\/test_ai(?:@[A-Za-z0-9_]+)?$/i.test(text.trim());
+}
+
 export function redactProviderError(raw: unknown): Record<string, unknown> {
   if (typeof raw !== "object" || raw === null) {
     return { raw };
