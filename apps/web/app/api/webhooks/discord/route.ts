@@ -1,5 +1,6 @@
 import { extractActionsFromReply } from "@coach/ai";
 import { insertConversationMessage, linkDiscordByCode, withClient } from "@coach/db";
+import { getAiExtractionConfig } from "@/lib/ai";
 import { jsonOk } from "@/lib/http";
 
 export async function POST(request: Request) {
@@ -35,6 +36,6 @@ export async function POST(request: Request) {
     raw: payload as Record<string, unknown>
   });
 
-  const extraction = await extractActionsFromReply({ userReply: content, openAiApiKey: process.env.OPENAI_API_KEY });
+  const extraction = await extractActionsFromReply({ userReply: content, ...getAiExtractionConfig() });
   return jsonOk({ ok: true, parsed: extraction.parsed, source: extraction.source });
 }

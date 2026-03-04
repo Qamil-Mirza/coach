@@ -2,5 +2,8 @@ name = "coach-scheduler"
 main = "src/index.ts"
 compatibility_date = "2026-02-18"
 
+[vars]
+API_BASE_URL = "http://localhost:3000"
+
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["* * * * *"]

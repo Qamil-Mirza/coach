@@ -1,7 +1,53 @@
-import { extractActionsFromReply } from "@coach/ai";
-import { insertConversationMessage, linkTelegramByCode, withClient } from "@coach/db";
-import { parseTelegramLinkCommand } from "@coach/integrations";
+import { extractActionsFromReply, summarizeTodos } from "@coach/ai";
+import { insertConversationMessage, linkTelegramByCode, listTodos, withClient } from "@coach/db";
+import {
+  isTelegramAiTestCommand,
+  isTelegramTasksCommand,
+  parseTelegramLinkCommand,
+  telegramSendMessage
+} from "@coach/integrations";
+import { getAiExtractionConfig } from "@/lib/ai";
 import { jsonOk } from "@/lib/http";
+
+type TelegramTodoRow = {
+  title: string;
+  status: "open" | "done" | "archived";
+  priority: number;
+  due_at: string | null;
+};
+
+function renderTodoListMessage(todos: TelegramTodoRow[]): string {
+  if (!todos.length) {
+    return "You have no todo items yet.";
+  }
+
+  const header = "Your todo list:";
+  const lines = todos.map((todo, index) => {
+    const mark = todo.status === "done" ? "[x]" : todo.status === "archived" ? "[-]" : "[ ]";
+    const priority = `P${todo.priority}`;
+    const due = todo.due_at ? ` | due ${new Date(todo.due_at).toISOString().slice(0, 10)}` : "";
+    return `${index + 1}. ${mark} ${todo.title} (${priority})${due}`;
+  });
+
+  const maxChars = 3800;
+  let message = header;
+  let shown = 0;
+  for (const line of lines) {
+    const candidate = `${message}\n${line}`;
+    if (candidate.length > maxChars) {
+      break;
+    }
+    message = candidate;
+    shown += 1;
+  }
+
+  const remaining = todos.length - shown;
+  if (remaining > 0) {
+    message += `\n...and ${remaining} more`;
+  }
+
+  return message;
+}
 
 export async function POST(request: Request) {
   const payload = (await request.json().catch(() => ({}))) as {
@@ -41,7 +87,50 @@ export async function POST(request: Request) {
     raw: payload as Record<string, unknown>
   });
 
-  const extraction = await extractActionsFromReply({ userReply: text, openAiApiKey: process.env.OPENAI_API_KEY });
+  if (isTelegramTasksCommand(text)) {
+    const todos = (await listTodos(userId)) as TelegramTodoRow[];
+    const listMessage = renderTodoListMessage(todos);
+    await telegramSendMessage({
+      botToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
+      chatId,
+      text: listMessage
+    });
+    return jsonOk({ ok: true, listed: true, total: todos.length });
+  }
+
+  if (isTelegramAiTestCommand(text)) {
+    const todos = (await listTodos(userId)) as TelegramTodoRow[];
+    const summary = await summarizeTodos({
+      todos: todos.map((todo) => ({
+        title: todo.title,
+        status: todo.status,
+        priority: todo.priority,
+        due_at: todo.due_at
+      })),
+      ...getAiExtractionConfig()
+    });
+
+    const testMessage = `AI summary test
+provider=${summary.provider}
+source=${summary.source}
+
+${summary.summary}`;
+
+    await telegramSendMessage({
+      botToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
+      chatId,
+      text: testMessage
+    });
+
+    return jsonOk({
+      ok: true,
+      ai_test: true,
+      provider: summary.provider,
+      source: summary.source
+    });
+  }
+
+  const extraction = await extractActionsFromReply({ userReply: text, ...getAiExtractionConfig() });
 
   if (extraction.parsed.intent === "snooze") {
     const minutes = extraction.parsed.snooze_minutes ?? 120;

@@ -1,6 +1,7 @@
 import { buildCheckinPrompt, extractActionsFromReply } from "@coach/ai";
 import { getUserSchedulingContext } from "@coach/db";
 import { requireSessionUser } from "@/lib/auth";
+import { getAiExtractionConfig } from "@/lib/ai";
 import { jsonError, jsonOk } from "@/lib/http";
 
 export async function POST(request: Request) {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
 
   const extraction = await extractActionsFromReply({
     userReply: message,
-    openAiApiKey: process.env.OPENAI_API_KEY
+    ...getAiExtractionConfig()
   });
 
   return jsonOk({ extraction: extraction.parsed, source: extraction.source });

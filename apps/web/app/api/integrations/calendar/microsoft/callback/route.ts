@@ -1,5 +1,5 @@
 import { withClient } from "@coach/db";
-import { jsonError, jsonOk } from "@/lib/http";
+import { jsonError } from "@/lib/http";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -19,5 +19,5 @@ export async function GET(request: Request) {
     )
   );
 
-  return jsonOk({ ok: true, provider: "microsoft" });
+  return Response.redirect(new URL("/dashboard", request.url));
 }

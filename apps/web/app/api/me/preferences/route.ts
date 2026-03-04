@@ -12,7 +12,8 @@ export async function GET() {
   const result = await withClient((db) =>
     db.query(
       `select dnd_start_local::text, dnd_end_local::text, workday_start_local::text, workday_end_local::text,
-              checkin_frequency, preferred_windows, calendar_strategy
+              checkin_frequency, preferred_windows, calendar_strategy,
+              fixed_telegram_enabled, fixed_telegram_time_local::text, fixed_telegram_message_mode, fixed_telegram_days
        from schedule_preferences where user_id = $1`,
       [user.id]
     )
