@@ -1,0 +1,20 @@
+{
+  "name": "@coach/scheduler",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "build": "wrangler deploy --dry-run",
+    "lint": "echo 'no lint setup yet'",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@coach/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260218.0",
+    "typescript": "5.7.3",
+    "wrangler": "4.1.0"
+  }
+}
